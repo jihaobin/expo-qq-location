@@ -1,6 +1,6 @@
 {
   "name": "expo-qq-location",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A React Native Expo module for Tencent Location SDK with continuous location tracking",
   "main": "build/index.js",
   "types": "build/index.d.ts",
