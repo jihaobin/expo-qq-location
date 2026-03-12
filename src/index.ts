@@ -3,6 +3,10 @@ import ExpoQqLocationModule from './ExpoQqLocationModule';
 // 导出类型
 export * from './ExpoQqLocation.types';
 
+export type LocationListenerSubscription = {
+  remove(): void;
+};
+
 // 导出模块
 export default ExpoQqLocationModule;
 
@@ -38,19 +42,19 @@ export function getApiKey(): string {
 // 事件监听便捷方法
 export function addLocationListener(
   listener: (event: import('./ExpoQqLocation.types').LocationChangedEvent) => void
-) {
+): LocationListenerSubscription {
   return ExpoQqLocationModule.addListener('onLocationChanged', listener);
 }
 
 export function addLocationErrorListener(
   listener: (event: import('./ExpoQqLocation.types').LocationErrorEvent) => void
-) {
+): LocationListenerSubscription {
   return ExpoQqLocationModule.addListener('onLocationError', listener);
 }
 
 export function addStatusUpdateListener(
   listener: (event: import('./ExpoQqLocation.types').LocationStatusEvent) => void
-) {
+): LocationListenerSubscription {
   return ExpoQqLocationModule.addListener('onStatusUpdate', listener);
 }
 
