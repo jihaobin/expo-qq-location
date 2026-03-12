@@ -2,6 +2,8 @@ package expo.modules.qqlocation
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -14,6 +16,34 @@ import com.tencent.map.geolocation.TencentLocationRequest
 class ExpoQqLocationModule : Module(), TencentLocationListener {
   private var mLocationManager: TencentLocationManager? = null
   private var isListening = false
+  private var currentRequestSignature: String? = null
+  private var singleRequestInFlight = false
+  private val singleRequestTimeoutMs = 12000L
+  private var singleRequestTimeoutHandler: Handler? = null
+  private var singleRequestTimeoutRunnable: Runnable? = null
+  private var singleRequestPromise: Promise? = null
+
+  private fun stopInternal() {
+    try {
+      mLocationManager?.removeUpdates(this@ExpoQqLocationModule)
+    } catch (_: Exception) {
+    }
+    isListening = false
+    currentRequestSignature = null
+  }
+
+  private fun buildRequestSignature(params: Map<String, Any>?): String {
+    if (params.isNullOrEmpty()) return "default"
+    return params.toSortedMap().entries.joinToString("&") { "${it.key}=${it.value}" }
+  }
+
+  private fun clearSingleRequestTimeout() {
+    singleRequestTimeoutRunnable?.let { runnable ->
+      singleRequestTimeoutHandler?.removeCallbacks(runnable)
+    }
+    singleRequestTimeoutRunnable = null
+    singleRequestTimeoutHandler = null
+  }
 
   override fun definition() = ModuleDefinition {
     Name("ExpoQqLocation")
@@ -31,7 +61,11 @@ class ExpoQqLocationModule : Module(), TencentLocationListener {
       if (mLocationManager == null) {
         mLocationManager = TencentLocationManager.getInstance(appContext.reactContext)
       }
-      mLocationManager?.setDeviceID(appContext.reactContext,deviceId)
+      mLocationManager?.setDeviceID(appContext.reactContext, deviceId)
+    }
+
+    Function("isLocationRunning") {
+      isListening
     }
 
     // 开始连续定位
@@ -39,6 +73,17 @@ class ExpoQqLocationModule : Module(), TencentLocationListener {
       try {
         if (mLocationManager == null) {
           mLocationManager = TencentLocationManager.getInstance(appContext.reactContext)
+        }
+
+        val signature = buildRequestSignature(requestParams)
+
+        if (isListening && signature == currentRequestSignature) {
+          promise.resolve(0)
+          return@AsyncFunction
+        }
+
+        if (isListening) {
+          stopInternal()
         }
 
         val request = TencentLocationRequest.create()
@@ -76,24 +121,134 @@ class ExpoQqLocationModule : Module(), TencentLocationListener {
           (params["gpsTimeOut"] as? Double)?.toInt()?.let {
             request.setGpsFirstTimeOut(it)
           }
+
+          (params["allowCache"] as? Boolean)?.let {
+            request.setAllowCache(it)
+          }
         }
 
-        val result = mLocationManager?.requestLocationUpdates(request, this@ExpoQqLocationModule)
-        isListening = result == 0
-        promise.resolve(result ?: -1)
+        val result = mLocationManager?.requestLocationUpdates(request, this@ExpoQqLocationModule) ?: -1
+        if (result == 0) {
+          isListening = true
+          currentRequestSignature = signature
+        }
+        promise.resolve(result)
       } catch (e: Exception) {
         promise.reject("LOCATION_ERROR", "Failed to start location updates: ${e.message}", e)
       }
     }
 
+    AsyncFunction("requestSingleFreshLocation") { requestParams: Map<String, Any>?, promise: Promise ->
+      try {
+        if (mLocationManager == null) {
+          mLocationManager = TencentLocationManager.getInstance(appContext.reactContext)
+        }
+
+        if (singleRequestInFlight) {
+          promise.reject("LOCATION_BUSY", "Single fresh location request already in flight")
+          return@AsyncFunction
+        }
+        singleRequestInFlight = true
+        singleRequestPromise = promise
+        val handler = Handler(Looper.getMainLooper())
+        singleRequestTimeoutHandler = handler
+        val timeoutRunnable = Runnable {
+          if (!singleRequestInFlight) return@Runnable
+          singleRequestInFlight = false
+          singleRequestPromise?.reject("LOCATION_TIMEOUT", "Single fresh location request timed out")
+          singleRequestPromise = null
+          clearSingleRequestTimeout()
+        }
+        singleRequestTimeoutRunnable = timeoutRunnable
+        handler.postDelayed(timeoutRunnable, singleRequestTimeoutMs)
+
+        val request = TencentLocationRequest.create()
+        requestParams?.let { params ->
+          (params["interval"] as? Double)?.toLong()?.let {
+            if (it >= 1000) request.setInterval(it)
+          }
+          (params["requestLevel"] as? Double)?.toInt()?.let {
+            request.setRequestLevel(it)
+          }
+          (params["allowGPS"] as? Boolean)?.let {
+            request.setAllowGPS(it)
+          }
+          (params["allowDirection"] as? Boolean)?.let {
+            request.setAllowDirection(it)
+          }
+          (params["indoorLocationMode"] as? Boolean)?.let {
+            request.setIndoorLocationMode(it)
+          }
+          (params["locMode"] as? Double)?.toInt()?.let {
+            request.setLocMode(it)
+          }
+          (params["gpsFirst"] as? Boolean)?.let {
+            request.setGpsFirst(it)
+          }
+          (params["gpsTimeOut"] as? Double)?.toInt()?.let {
+            request.setGpsFirstTimeOut(it)
+          }
+          (params["allowCache"] as? Boolean)?.let {
+            request.setAllowCache(it)
+          }
+        }
+
+        val singleListener = object : TencentLocationListener {
+          override fun onLocationChanged(location: TencentLocation?, error: Int, reason: String?) {
+            if (!singleRequestInFlight) return
+            clearSingleRequestTimeout()
+            singleRequestInFlight = false
+
+            if (error == TencentLocation.ERROR_OK && location != null) {
+              val locationData = mutableMapOf<String, Any>().apply {
+                put("latitude", location.latitude)
+                put("longitude", location.longitude)
+                put("altitude", location.altitude)
+                put("accuracy", location.accuracy.toDouble())
+                put("bearing", location.bearing.toDouble())
+                put("speed", location.speed.toDouble())
+                put("timestamp", System.currentTimeMillis())
+                location.nation?.let { put("nation", it) }
+                location.province?.let { put("province", it) }
+                location.city?.let { put("city", it) }
+                location.district?.let { put("district", it) }
+                location.address?.let { put("address", it) }
+              }
+              singleRequestPromise?.resolve(locationData)
+              singleRequestPromise = null
+            } else {
+              singleRequestPromise?.reject("LOCATION_SINGLE_ERROR", reason ?: "Unknown location error")
+              singleRequestPromise = null
+            }
+          }
+
+          override fun onStatusUpdate(name: String?, status: Int, desc: String?) {
+          }
+        }
+
+        val result = mLocationManager?.requestSingleFreshLocation(
+          request,
+          singleListener,
+          Looper.getMainLooper()
+        ) ?: -1
+
+        if (result != 0) {
+          clearSingleRequestTimeout()
+          singleRequestInFlight = false
+          singleRequestPromise?.reject("LOCATION_START_FAILED", "requestSingleFreshLocation failed with code: $result")
+          singleRequestPromise = null
+        }
+      } catch (e: Exception) {
+        clearSingleRequestTimeout()
+        singleRequestInFlight = false
+        singleRequestPromise?.reject("LOCATION_ERROR", "Failed to request single fresh location: ${e.message}", e)
+        singleRequestPromise = null
+      }
+    }
+
     // 停止定位
     Function("stopLocationUpdates") {
-      try {
-        mLocationManager?.removeUpdates(this@ExpoQqLocationModule)
-        isListening = false
-      } catch (_: Exception) {
-        // 忽略错误
-      }
+      stopInternal()
     }
 
     // 检查定位权限
@@ -145,17 +300,21 @@ class ExpoQqLocationModule : Module(), TencentLocationListener {
 
     // 模块销毁时清理资源
     OnDestroy {
-      try {
-        mLocationManager?.removeUpdates(this@ExpoQqLocationModule)
-        isListening = false
-      } catch (_: Exception) {
-        // 忽略错误
+      stopInternal()
+
+      clearSingleRequestTimeout()
+      if (singleRequestInFlight) {
+        singleRequestPromise?.reject("LOCATION_DESTROYED", "Module destroyed before single location completed")
       }
+      singleRequestInFlight = false
+      singleRequestPromise = null
     }
   }
 
   // 实现TencentLocationListener接口
   override fun onLocationChanged(location: TencentLocation?, error: Int, reason: String?) {
+    if (!isListening) return
+
     try {
       if (error == TencentLocation.ERROR_OK && location != null) {
         // 定位成功
@@ -213,6 +372,8 @@ class ExpoQqLocationModule : Module(), TencentLocationListener {
   }
 
   override fun onStatusUpdate(name: String?, status: Int, desc: String?) {
+    if (!isListening) return
+
     try {
       val statusData = mapOf(
         "name" to (name ?: "unknown"),

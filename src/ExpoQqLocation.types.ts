@@ -40,6 +40,8 @@ export type LocationErrorEvent = {
     reason: string;
 };
 
+export type SingleLocationResult = LocationChangedEvent;
+
 export type ExpoQqLocationModuleEvents = {
     onLocationChanged: (event: LocationChangedEvent) => void;
     onLocationError: (event: LocationErrorEvent) => void;
@@ -58,12 +60,13 @@ export type LocationRequest = {
     allowDirection?: boolean;
     // 是否开启室内定位
     indoorLocationMode?: boolean;
-    // 定位模式：0-高精度, 1-仅网络, 2-仅GPS
+    // 定位模式：10-高精度, 11-仅网络, 12-仅GPS
     locMode?: number;
     // GPS优先
     gpsFirst?: boolean;
     // GPS超时时间（毫秒）
     gpsTimeOut?: number;
+    allowCache?: boolean;
 };
 
 // 错误码常量

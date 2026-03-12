@@ -1,6 +1,10 @@
 import { NativeModule, requireNativeModule } from 'expo';
 
-import { ExpoQqLocationModuleEvents, LocationRequest } from './ExpoQqLocation.types';
+import {
+    ExpoQqLocationModuleEvents,
+    LocationRequest,
+    SingleLocationResult,
+} from './ExpoQqLocation.types';
 
 declare class ExpoQqLocationModule extends NativeModule<ExpoQqLocationModuleEvents> {
     // 设置用户是否同意隐私协议
@@ -10,7 +14,7 @@ declare class ExpoQqLocationModule extends NativeModule<ExpoQqLocationModuleEven
     setDeviceID: (deviceId: string) => void;
 
     // 开始连续定位
-    startLocationUpdates: (request: LocationRequest) => Promise<number>;
+    startLocationUpdates: (request?: LocationRequest) => Promise<number>;
 
     // 停止定位
     stopLocationUpdates: () => void;
@@ -20,6 +24,10 @@ declare class ExpoQqLocationModule extends NativeModule<ExpoQqLocationModuleEven
 
     // 请求定位权限
     requestLocationPermission: () => Promise<boolean>;
+
+    isLocationRunning: () => boolean;
+
+    requestSingleFreshLocation: (request?: LocationRequest) => Promise<SingleLocationResult>;
 
     // 获取API Key（用于测试config plugin是否工作）
     getApiKey: () => string;

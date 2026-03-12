@@ -27,6 +27,16 @@ export function stopLocationUpdates(): void {
   return ExpoQqLocationModule.stopLocationUpdates();
 }
 
+export function isLocationRunning(): boolean {
+  return ExpoQqLocationModule.isLocationRunning();
+}
+
+export function requestSingleFreshLocation(
+  request: import('./ExpoQqLocation.types').LocationRequest = {},
+): Promise<import('./ExpoQqLocation.types').SingleLocationResult> {
+  return ExpoQqLocationModule.requestSingleFreshLocation(request);
+}
+
 export function hasLocationPermission(): Promise<boolean> {
   return ExpoQqLocationModule.hasLocationPermission();
 }
@@ -58,6 +68,10 @@ export function addStatusUpdateListener(
   return ExpoQqLocationModule.addListener('onStatusUpdate', listener);
 }
 
+/**
+ * @deprecated 仅用于全局兜底清理，不建议在普通页面调用。
+ * 请优先使用 addXxxListener 返回的 subscription.remove()。
+ */
 export function removeAllLocationListeners() {
   ExpoQqLocationModule.removeAllListeners('onLocationChanged');
   ExpoQqLocationModule.removeAllListeners('onLocationError');

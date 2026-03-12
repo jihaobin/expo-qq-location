@@ -10,6 +10,8 @@
 
 - 🎯 **高精度定位** - 基于腾讯地图定位SDK v7.6.1
 - 📱 **连续定位** - 支持按间隔连续获取位置信息
+- 🎯 **单次定位** - 支持按需获取一次最新位置（不必启动连续定位）
+- ♻️ **幂等启动** - 相同参数重复调用不会重复启动，参数变更才会可控重启
 - 🏢 **丰富的地址信息** - 包含行政区划、POI等详细信息
 - 🔒 **隐私合规** - 完全符合Android隐私政策要求
 - ⚙️ **自动配置** - 内置Config Plugin自动配置权限和API Key
@@ -142,7 +144,10 @@ setDeviceID('unique-device-id');
 
 #### `startLocationUpdates(request?: LocationRequest): Promise<number>`
 
-开始连续定位
+开始连续定位。该方法为幂等行为：
+
+- 同参数重复调用：直接返回成功，不重复启动
+- 参数变化调用：自动执行一次 stop + restart
 
 ```typescript
 const result = await startLocationUpdates({
@@ -153,7 +158,30 @@ const result = await startLocationUpdates({
   indoorLocationMode: true,                          // 室内定位
   locMode: LocationMode.HIGH_ACCURACY_MODE,          // 定位模式
   gpsFirst: true,                                    // GPS优先
-  gpsTimeOut: 8000                                   // GPS超时时间
+  gpsTimeOut: 8000,                                  // GPS超时时间
+  allowCache: true                                   // 允许缓存定位结果
+});
+```
+
+#### `isLocationRunning(): boolean`
+
+查询当前连续定位是否处于运行态
+
+```typescript
+const running = isLocationRunning();
+console.log('连续定位运行中:', running);
+```
+
+#### `requestSingleFreshLocation(request?: LocationRequest): Promise<SingleLocationResult>`
+
+请求一次最新位置，适合“选地址/只取一次当前点位”场景。
+
+```typescript
+const location = await requestSingleFreshLocation({
+  requestLevel: RequestLevel.REQUEST_LEVEL_NAME,
+  allowGPS: true,
+  allowCache: true,
+  locMode: LocationMode.HIGH_ACCURACY_MODE,
 });
 ```
 
@@ -175,7 +203,7 @@ const hasPermission = await hasLocationPermission();
 
 #### `requestLocationPermission(): Promise<boolean>`
 
-请求定位权限
+检查当前定位权限状态（在 Expo 环境下通常由系统/框架处理权限弹窗）
 
 ```typescript
 const granted = await requestLocationPermission();
@@ -216,6 +244,12 @@ const subscription = addStatusUpdateListener((event: LocationStatusEvent) => {
   console.log('状态:', event.status);
 });
 ```
+
+#### `removeAllLocationListeners()`
+
+> ⚠️ `@deprecated`：仅建议用于全局兜底清理，不建议在普通页面中调用。
+
+推荐在页面/组件销毁时，使用 `addXxxListener` 返回的订阅对象执行 `subscription.remove()`，避免误删其他页面的监听器。
 
 ### 类型定义
 
@@ -262,9 +296,10 @@ type LocationRequest = {
   allowGPS?: boolean;         // 是否允许GPS
   allowDirection?: boolean;   // 是否获取方向
   indoorLocationMode?: boolean; // 室内定位模式
-  locMode?: number;           // 定位模式（0-2）
+  locMode?: number;           // 定位模式（10-12）
   gpsFirst?: boolean;         // GPS优先
   gpsTimeOut?: number;        // GPS超时时间（毫秒）
+  allowCache?: boolean;       // 是否允许缓存定位结果
 };
 ```
 
@@ -282,9 +317,9 @@ RequestLevel.REQUEST_LEVEL_POI        // 4: 坐标+行政区划+POI
 #### 定位模式
 
 ```typescript
-LocationMode.HIGH_ACCURACY_MODE  // 0: 高精度模式
-LocationMode.ONLY_NETWORK_MODE   // 1: 仅网络定位
-LocationMode.ONLY_GPS_MODE       // 2: 仅GPS定位
+LocationMode.HIGH_ACCURACY_MODE  // 10: 高精度模式
+LocationMode.ONLY_NETWORK_MODE   // 11: 仅网络定位
+LocationMode.ONLY_GPS_MODE       // 12: 仅GPS定位
 ```
 
 #### 错误码
@@ -339,7 +374,7 @@ Plugin会自动添加以下Android权限：
 ### 权限处理
 
 ```typescript
-// 检查并请求权限
+// 检查权限状态（requestLocationPermission 返回当前状态）
 const checkPermissions = async () => {
   const hasPermission = await hasLocationPermission();
   if (!hasPermission) {
@@ -352,6 +387,25 @@ const checkPermissions = async () => {
   return true;
 };
 ```
+
+### 监听器清理建议
+
+```typescript
+const locationSub = addLocationListener((event) => {
+  console.log(event);
+});
+
+const errorSub = addLocationErrorListener((event) => {
+  console.log(event);
+});
+
+return () => {
+  locationSub.remove();
+  errorSub.remove();
+};
+```
+
+不要在普通页面调用 `removeAllLocationListeners()`，以免影响其他页面或模块仍在使用的监听器。
 
 ### API Key获取
 
