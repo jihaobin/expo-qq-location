@@ -145,7 +145,7 @@ class ExpoQqLocationModule : Module(), TencentLocationListener {
         }
 
         if (singleRequestInFlight) {
-          promise.reject("LOCATION_BUSY", "Single fresh location request already in flight")
+          promise.reject("LOCATION_BUSY", "Single fresh location request already in flight", null)
           return@AsyncFunction
         }
         singleRequestInFlight = true
@@ -155,7 +155,7 @@ class ExpoQqLocationModule : Module(), TencentLocationListener {
         val timeoutRunnable = Runnable {
           if (!singleRequestInFlight) return@Runnable
           singleRequestInFlight = false
-          singleRequestPromise?.reject("LOCATION_TIMEOUT", "Single fresh location request timed out")
+          singleRequestPromise?.reject("LOCATION_TIMEOUT", "Single fresh location request timed out", null)
           singleRequestPromise = null
           clearSingleRequestTimeout()
         }
@@ -217,7 +217,7 @@ class ExpoQqLocationModule : Module(), TencentLocationListener {
               singleRequestPromise?.resolve(locationData)
               singleRequestPromise = null
             } else {
-              singleRequestPromise?.reject("LOCATION_SINGLE_ERROR", reason ?: "Unknown location error")
+              singleRequestPromise?.reject("LOCATION_SINGLE_ERROR", reason ?: "Unknown location error", null)
               singleRequestPromise = null
             }
           }
@@ -235,7 +235,7 @@ class ExpoQqLocationModule : Module(), TencentLocationListener {
         if (result != 0) {
           clearSingleRequestTimeout()
           singleRequestInFlight = false
-          singleRequestPromise?.reject("LOCATION_START_FAILED", "requestSingleFreshLocation failed with code: $result")
+          singleRequestPromise?.reject("LOCATION_START_FAILED", "requestSingleFreshLocation failed with code: $result", null)
           singleRequestPromise = null
         }
       } catch (e: Exception) {
@@ -304,7 +304,7 @@ class ExpoQqLocationModule : Module(), TencentLocationListener {
 
       clearSingleRequestTimeout()
       if (singleRequestInFlight) {
-        singleRequestPromise?.reject("LOCATION_DESTROYED", "Module destroyed before single location completed")
+        singleRequestPromise?.reject("LOCATION_DESTROYED", "Module destroyed before single location completed", null)
       }
       singleRequestInFlight = false
       singleRequestPromise = null
